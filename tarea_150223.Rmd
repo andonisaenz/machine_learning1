@@ -2,16 +2,21 @@
 title: "Tarea_150223"
 author: "Andoni Sáenz"
 date: "2023-02-15"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+##### Mi github: andonisaenz
+
 # Cargar los datos
 
 ```{r}
+library(latexpdf)
 datos <- read.csv("heart_mod.csv", sep = "p")
 ```
 
@@ -20,7 +25,7 @@ datos <- read.csv("heart_mod.csv", sep = "p")
 ```{r renaming}
 sapply(datos, class)
 
-datos$sex <- as.factor(datos$sex)
+datos$sex <- as.factor(datos$sex, ordered = F)
 levels(datos$sex) <- c("Female","Male")
 
 datos$cp <- as.factor(datos$cp)
@@ -60,6 +65,9 @@ datos <- datos[,-1]
 type_class <- sapply(datos, class)
 
 datos$oldpeak <- as.numeric(gsub(",",".", datos$oldpeak))
+datos$oldpeak <- as.integer(datos$oldpeak)
+
+type_class <- sapply(datos, class)
 
 data_num <- datos[,type_class %in% c("integer","numeric")]
 data_fac <- datos[,type_class %in% c("factor")]
@@ -159,7 +167,7 @@ for(i in rango_num){
   hist(data_num_norm[,i], col = i+1, main = names(data_num_norm)[i])
 }
 
-for(i in rango){
+for(i in rango_num){
   t <- t.test(as.numeric(target),data_num_norm[,i])
   p_value <- t$p.value
   p_valores_num[i,1] <- p_value
@@ -191,23 +199,88 @@ for(i in rango_fac){
 
 ```
 
-## Modeling
+## Modeling 
+
+#### Prueba
 
 ```{r}
 
-for(i in rango_num){
-  print(paste0("mod_",colnames(data_num)[i]))
-  print(summary(assign(paste0("mod_",colnames(data_num)[i]), 
-                       glm(target ~ data_num_norm[,i], 
-                           family = binomial(link = "logit"))))$coefficients)
-}
+# Me creo un dataset único con todos los datos
 
-for(i in rango_fac){
-  print(paste0("mod_",colnames(data_fac)[i]))
-  print(summary(assign(paste0("mod_",colnames(data_fac)[i]),
-                       glm(target ~ data_fac[,i],
-                           family = binomial(link = "logit"))))$coefficients)
-}
+data_total <- data.frame(matrix(NA, byrow = T, nrow = 303, ncol = 14))
+colnames(data_num_norm) <- gsub("_norm","",colnames(data_num_norm))
+colnames(data_total) <- names(data_num_norm)
+
+data_total[,1:5] <- data_num_norm
+colnames(data_total)[1:5] <- names(data_num_norm)
+data_total[,6:14] <- data_fac
+colnames(data_total)[6:14] <- names(data_fac)
+
+mod <- glm(target ~ chol + thalach + oldpeak + as.factor(sex) + 
+             as.factor(cp) + as.factor(exang) + as.factor(ca), 
+           data = data_total, family = binomial(link = "logit"))
+summary(mod)
+
+```
+
+#### Cómo hacer variables dummies
+
+```{r}
+
+# Las variables dummies se hacen cuando por ejemplo, dentro de una variable, un caso
+# es significativo y los otros no. Para no descartar la variable entera, se divide en
+# unos y ceros para ver su influencia individual a la hora de ver si es significativo
+# en el modelo.
+
+#table(data_total$cp)
+#data_total$cp0 <- ifelse(data_total$cp == 0, 1, 0)
+#data_total$cp1 <- ifelse(data_total$cp == 1, 1, 0)
+#data_total$cp2 <- ifelse(data_total$cp == 2, 1, 0)
+#data_total$cp3 <- ifelse(data_total$cp == 3, 1, 0)
+
+```
+
+
+##### Data training
+
+```{r}
+
+# 80% of the data to train the model
+
+sample_train1 <- sample(1:nrow(data_total), 61)
+train1 <- data_total[-sample_train1,]
+test1 <- data_total[sample_train1,]
+
+mod_train <- glm(target ~ chol + thalach + as.factor(sex) + 
+             as.factor(cp) + as.factor(exang) + as.factor(ca), 
+           data = train1, family = binomial(link = "logit"))
+summary(mod_train)
+
+# 20% of the data to make a prediction
+
+prediccion1 <- predict(mod_train, type = "response", newdata = test1)
+plot(sort(prediccion1), type = "l")
+table(ifelse(prediccion1 < 0.5, 0, 1))
+abline(h = 0.5, col = 3)
+
+```
+
+```{r}
+
+sample_train2 <- sample(1:nrow(data_total), 61)
+train2 <- data_total[-sample_train2,]
+test2 <- data_total[sample_train2,]
+
+mod_train <- glm(target ~ chol + thalach + as.factor(sex) + 
+             as.factor(cp) + as.factor(exang) + as.factor(ca), 
+           data = train2, family = binomial(link = "logit"))
+summary(mod_train)
+
+prediccion2 <- predict(mod_train, type = "response", newdata = test2)
+plot(sort(prediccion2), type = "l")
+table(ifelse(prediccion2 < 0.5, 0, 1))
+abline(h = 0.5, col = 3)
+
 ```
 
 
