@@ -1,0 +1,214 @@
+---
+title: "Tarea_150223"
+author: "Andoni Sáenz"
+date: "2023-02-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Cargar los datos
+
+```{r}
+datos <- read.csv("heart_mod.csv", sep = "p")
+```
+
+# Separar datos numéricos y categóricos
+
+```{r renaming}
+sapply(datos, class)
+
+datos$sex <- as.factor(datos$sex)
+levels(datos$sex) <- c("Female","Male")
+
+datos$cp <- as.factor(datos$cp)
+levels(datos$cp) <- c("Asymptomatic", "Atypical angina", "No angina", "Typical angina")
+
+datos$fbs <- as.factor(datos$fbs)
+levels(datos$fbs) <- c("No", "Yes")
+
+datos$restecg <- as.factor(datos$restecg)
+levels(datos$restecg) <- c("Hypertrophy", "Normal", "Abnormalities")
+
+datos$exang <- as.factor(datos$exang)
+levels(datos$exang) <- c("No", "Yes")
+
+datos$slope <- as.factor(datos$slope)
+levels(datos$slope) <- c("Descending", "Flat", "Ascending")
+
+datos$thal <- as.factor(datos$thal)
+levels(datos$thal) <- c("Fixed defect", "Normal flow", "Reversible defect")
+
+datos$ca <- as.factor(datos$ca)
+
+datos$target <- as.character(datos$target)
+datos$target[which(datos$target=="11")] <- "1"
+datos$target[which(datos$target=="O")] <- "0"
+
+datos$target <- as.factor(datos$target)
+levels(datos$target) <- c("Yes", "No")
+table(datos$target)
+```
+
+## Quitar columnas innecesarias y ordenar
+
+```{r}
+datos <- datos[,-1]
+
+type_class <- sapply(datos, class)
+
+datos$oldpeak <- as.numeric(gsub(",",".", datos$oldpeak))
+
+data_num <- datos[,type_class %in% c("integer","numeric")]
+data_fac <- datos[,type_class %in% c("factor")]
+```
+
+## Checking
+
+```{r}
+summary(data_num)
+
+df_variables <- data.frame(nombre = names(datos), tipo = type_class)
+
+data_num$chol[data_num$chol == 5] <- NA
+data_num$age[data_num$age == 640] <- 64
+data_num$age[data_num$age == 630] <- 63
+data_num$age[data_num$age == 350] <- 35
+data_num$trestbps[data_num$trestbps == 1540] <- 154
+
+mean_trestbps <- mean(datos$trestbps, na.rm = TRUE)
+data_num$trestbps[is.na(data_num$trestbps)] <- mean_trestbps
+
+mean_chol <- mean(datos$chol, na.rm = TRUE)
+data_num$chol[is.na(data_num$chol)] <- mean_chol
+
+mean_thalach <- mean(datos$thalach, na.rm = TRUE)
+data_num$thalach[is.na(data_num$thalach)] <- mean_thalach
+
+```
+
+## Plotting
+
+``` {r}
+plot(data_num$trestbps, main = "Trest", xlab = "Pacientes", ylab = "Trestbps")
+hist(data_num$trestbps, main = "Trest", xlab = "Trest", breaks = 20, col = "light blue")
+hist(data_num$age, main = "age", breaks = 20, col = "light blue")
+boxplot(data_num$age)
+
+# Ver normalidad en la edad
+
+shapiro.test(data_num$age)
+
+edad <- log(data_num$age)
+
+par(mfrow = c(1,2))
+hist(edad, breaks = 10, col = "light blue")
+boxplot(edad, col = "light blue")
+
+```
+
+## Centralizar y normalizar (estandarizar) datos 
+
+``` {r}
+
+# Con nuestra propia función:
+
+normalizar <- function(data_num){
+  
+    media <- mean(data_num, na.rm = T)
+    centrados <- data_num-media
+    desvest <- sd(data_num, na.rm = T)
+    normalizados <- centrados/desvest
+    return(normalizados)
+}
+
+for(i in names(data_num)){
+  data_num[,paste0(i,"_norm")] <- 0
+  data_num[,paste0(i,"_norm")] <- normalizar(data_num[,i])
+}
+
+data_num_norm <- data_num[,6:10]
+
+```
+
+# Análisis bivariante de las variables numéricas y categóricas
+
+## Análisis descriptivo y plots --> numéricos
+
+``` {r}
+
+target <- data_fac$target
+rango_num <- 1:length(data_num_norm)
+#p_valores <- NULL
+p_valores_num <- data.frame(matrix(NA, byrow = T, nrow = 5))
+rownames(p_valores_num) <- c("age","trestbps","chol","thalach","oldpeak")
+colnames(p_valores_num) <- "p-values"
+
+par(mfrow = c(2,3))
+
+for(i in rango_num){
+  boxplot(as.numeric(target),data_num_norm[,i], col = i+1, names = c("Yes","No"),
+          main = names(data_num_norm)[i])
+}
+
+par(mfrow = c(2,3))
+
+for(i in rango_num){
+  hist(data_num_norm[,i], col = i+1, main = names(data_num_norm)[i])
+}
+
+for(i in rango){
+  t <- t.test(as.numeric(target),data_num_norm[,i])
+  p_value <- t$p.value
+  p_valores_num[i,1] <- p_value
+}
+
+```
+
+## Análisis descriptivo y plots --> categóricos
+
+``` {r}
+
+rango_fac <- 1:(length(data_fac)-1)
+p_valores_fac <- data.frame(matrix(NA, byrow = T, nrow = 8))
+rownames(p_valores_fac) <- colnames(data_fac)[-9]
+colnames(p_valores_fac) <- "p-values"
+
+for(i in rango_fac){
+  chisq <- chisq.test(target, data_fac[,i])
+  p_value <- chisq$p.value
+  p_valores_fac[i,1] <- p_value
+}
+
+par(mfrow = c(3,3))
+
+for(i in rango_fac){
+  barplot(table(data_fac[,i]), col = i+1, 
+          main = colnames(data_fac)[i])
+}
+
+```
+
+## Modeling
+
+```{r}
+
+for(i in rango_num){
+  print(paste0("mod_",colnames(data_num)[i]))
+  print(summary(assign(paste0("mod_",colnames(data_num)[i]), 
+                       glm(target ~ data_num_norm[,i], 
+                           family = binomial(link = "logit"))))$coefficients)
+}
+
+for(i in rango_fac){
+  print(paste0("mod_",colnames(data_fac)[i]))
+  print(summary(assign(paste0("mod_",colnames(data_fac)[i]),
+                       glm(target ~ data_fac[,i],
+                           family = binomial(link = "logit"))))$coefficients)
+}
+```
+
+
+
