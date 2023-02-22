@@ -25,7 +25,7 @@ datos <- read.csv("heart_mod.csv", sep = "p")
 ```{r renaming}
 sapply(datos, class)
 
-datos$sex <- as.factor(datos$sex, ordered = F)
+datos$sex <- as.factor(datos$sex)
 levels(datos$sex) <- c("Female","Male")
 
 datos$cp <- as.factor(datos$cp)
@@ -266,6 +266,7 @@ abline(h = 0.5, col = 3)
 ```
 
 ```{r}
+
 
 sample_train2 <- sample(1:nrow(data_total), 61)
 train2 <- data_total[-sample_train2,]
