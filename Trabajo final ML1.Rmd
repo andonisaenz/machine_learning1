@@ -1,0 +1,402 @@
+---
+title: "Trabajo final ML1"
+author: "Andoni Sáenz"
+date: "2023-02-22"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+<style>
+body {
+text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+El URL de mi github: https://github.com/andonisaenz/machine_learning1.git
+
+## Cargar los datos
+
+Para cargar los datos primero he convertido los ficheros a .txt, y después los he guardado 
+en las variables "training_data" y "test_data", importándolos con read.delim2, y poniendo 
+como separador "_" y "/", respectivamente. Además, he tenido en cuenta que la primera línea
+no la coja como _header_. 
+
+```{r}
+
+training_data <- read.delim2("Breast_Cancer_train.data.txt", sep = "_", 
+                             header = FALSE, dec = ".")
+test_data <- read.delim2("Breast_Cancer_test.data.txt", sep = "/",
+                         header = FALSE, dec = ".")
+
+```
+
+Ambos _data frames_ tienen, por cada observación, datos de 11 variables. El _data frame_ **training_data**, además contiene datos de una variable más, la variable **class**, que representa el _target_. Sin embargo, el _data frame_ de **test_data** no contiene esta última variable.
+
+Salvo la variable **class**, el resto de variables son de tipo numérico, en concreto de tipo _integer_. La variable **class** es de tipo categórico: se definen los números 2 para benigno y 4 para maligno. Por ello, dicha variable se convertirá a tipo _factor_.
+
+## Limpiar los datos
+
+Primero nombro cada una de las columnas de ambos _data frames_ con los nombres de las 
+variables. Después, para limpiar cada uno de los _data frames_, primero elimino los
+_patterns_ "h" y "\\" de cada _dataset_, respectivamente. 
+
+```{r}
+
+colnames(training_data) <- c("id","thick","size","shape","adhesion","epi_size",
+                             "b_nuclei","b_chr","n_nucleoli","mit","group","class")
+colnames(test_data) <- c("id","thick","size","shape","adhesion","epi_size",
+                             "b_nuclei","b_chr","n_nucleoli","mit","group")
+
+training_data <- data.frame(lapply(training_data, gsub, pattern = "h", replacement = ""))
+test_data <- data.frame(lapply(test_data, gsub, pattern = "\\", replacement = "", fixed = TRUE))
+
+```
+
+Teniendo en cuenta la relevancia de las variables, considero que no es relevante conocer el grupo al que pertenece cada observación para el posterior modelado de datos, por lo que elimino en ambos datasets todos los datos correspondietes a la variable **group**.
+
+```{r}
+
+training_data <- training_data[,-11]
+test_data <- test_data[,-11]
+
+```
+
+A continuación, convierto todas las variables a tipo _integer_ para trabajar con números enteros. Al hacer esto, los números con decimales los convierto en enteros y los "?" correspondientes a los _missing attribute values_ se sustituyen por _NAs_, para que posteriormente sea más fácil eliminarlos.
+
+```{r}
+
+suppressWarnings(training_data <- data.frame(lapply(training_data, as.integer)))
+suppressWarnings(test_data <- data.frame(lapply(test_data, as.integer)))
+
+```
+
+Después, hago un _checking_ para comprobar que todos los valores son correctos y modifico aquellos con errores. De la variable **class** a la hora de modificar los errores, interpreto que 44 se refiere a que pertenece a la clase 4 y 20 a la clase 2, sin embargo, 3 no sé cómo clasificarlo (clase 2 o 4), por lo que decido eliminar esas observaciones (solo son 4 de un total de 559).
+
+```{r}
+
+# 1) Variable class
+
+training_data$class[which(training_data$class != 2 & training_data$class != 4)]
+training_data$class[which(training_data$class == 44)] <- 4
+training_data$class[which(training_data$class == 20)] <- 2
+training_data <- training_data[-which(training_data$class == 3),]
+
+```
+
+```{r}
+
+# 2) Resto de variables
+
+training_data[,2:10][which(training_data[,2:10] > 10|training_data[,2:10] < 0 , arr.ind = T)]
+training_data[which(training_data == 30, arr.ind = T)] <- 3
+training_data[which(training_data == 60, arr.ind = T)] <- 6
+training_data[which(training_data == 80, arr.ind = T)] <- 8
+training_data[which(training_data == 100, arr.ind = T)] <- 10
+training_data[which(training_data == 11, arr.ind = T)] <- 1
+training_data[which(training_data == -7, arr.ind = T)] <- 7
+training_data[which(training_data == -1, arr.ind = T)] <- 1
+
+test_data[,2:10][which(test_data[,2:10] > 10|test_data[,2:10] < 0 , arr.ind = T)]
+test_data[which(test_data == 30, arr.ind = T)] <- 3
+test_data[which(test_data == 80, arr.ind = T)] <- 8
+
+suppressWarnings(training_data <- data.frame(lapply(training_data, as.integer)))
+suppressWarnings(test_data <- data.frame(lapply(test_data, as.integer)))
+
+```
+
+Tras realizar el _checking_, convierto la variable **class** (de tipo categórico) a tipo _factor_, donde establezco los _levels_: 2 equivale a _Benign_ y 4 _Malignant_.
+
+```{r}
+
+training_data$class <- as.factor(training_data$class)
+levels(training_data$class) <- c("Benign","Malignant")
+
+```
+
+Compruebo en ambos _data frames_ cuántos _NAs_ hay en cada variable y elimino todas esas observaciones, ya que representan un pequeño porcentaje del total de datos.
+
+```{r}
+
+sapply(training_data, function(x) sum(is.na(x)))
+sapply(test_data, function(x) sum(is.na(x)))
+
+training_data <- na.omit(training_data)
+test_data <- na.omit(test_data)
+
+```
+
+Finalmente, elimino valores duplicados en ambos _datasets_ mediante la función _duplicated_. Dicha función me permite saber cuáles son las observaciones que tienen mismo _id_, que yo interpreto que están duplicadas.
+
+```{r}
+
+test_data <- test_data[!duplicated(test_data$id),]
+training_data <- training_data[!duplicated(training_data$id),]
+
+```
+
+## Análisis univariante
+
+#### Representación gráfica de las variables
+
+A continuación, represento gráficamente el aspecto que tienen los datos del _dataset_ **training_data** mediante histogramas y _boxplots_. Para ello, cargo los paquetes: _dplyr_, _tidyverse_, _tidyr_ y _ggplot2_.
+
+```{r message=FALSE, warning=FALSE}
+
+library(dplyr)
+library(tidyverse)
+library(tidyr)
+library(ggplot2)
+
+```
+
+```{r}
+
+training_long <- pivot_longer(training_data, cols = 2:10)
+
+```
+
+La función _pivot_longer_ me permite organizar los datos de una forma más alargada reduciendo el número de columnas, lo cual es más conveniente para graficarlos. 
+
+```{r}
+
+training_long %>% 
+  ggplot()+
+  geom_histogram(aes(x = value, fill = class), bins = 10)+
+  facet_wrap(~ name)
+
+training_long %>% 
+  ggplot(aes(x = name, y = value, fill = class))+
+  geom_boxplot()
+
+training_long %>% 
+  ggplot(aes(x = value, y = name, colour = class, shape = class))+
+  geom_point()+
+  geom_jitter()
+
+```
+
+En base a los gráficos obtenidos, se puede concluir que, a simple vista, ninguna de las variables sigue una distribución normal. En el caso de los datos de la variable **class** de tipo _Malignant_ parece ser que se distribuyen más o menos de manera uniforme, aunque en varias variables se puede apreciar que toman valores más próximos al 10, mientras que los datos de tipo _Benign_ parece que toman valores más próximos al 1 y no siguen una distribución uniforme.
+
+Para comprobar la normalidad de las distribuciones llevo a cabo un test de _Saphiro-Wilk_ y almaceno en un _data frame_ todos los p-valores correspondientes a cada variable.
+
+```{r}
+
+p_value_norm <- data.frame(matrix(data = NA, byrow = T, nrow = 9))
+rownames(p_value_norm) <- c("thick","size","shape","adhesion","epi_size",
+                             "b_nuclei","b_chr","n_nucleoli","mit")
+colnames(p_value_norm) <- "p-value"
+
+for(i in 2:length(training_data)-1){
+  p_value_norm[i-1,] <- shapiro.test(training_data[,i])$p.value
+}
+
+View(p_value_norm)
+
+```
+
+Tras comprobar los p-valores obtenidos, se puede concluir con un 95% de confianza que todos los p_valores son significativos, y por tanto, se puede rechazar la hipotesis nula de que las variables siguen una distribución normal.
+
+Por ello, es necesario normalizar las muestras.
+
+## Normalización de las muestras
+
+```{r message=FALSE, warning=FALSE}
+
+library(caret)
+library(lattice)
+
+norm_Param <- preProcess(training_data[,2:10])
+norm_test <- predict(norm_Param, test_data[,2:10])
+norm_train <- predict(norm_Param, training_data[,2:10])
+
+norm_test[,10] <- test_data[,1] # Añado los id del test_data 
+names(norm_test)[10] <- "id"
+norm_test <- norm_test %>% relocate(id)
+
+norm_train[,10] <- training_data[,1] # Añado los id del training_data 
+names(norm_train)[10] <- "id"
+norm_train <- norm_train %>% relocate(id)
+norm_train[,11] <- training_data[,11] # Añado los datos class del training_data
+names(norm_train)[11] <- "class"
+
+```
+
+He normalizado los datos utilizando el paquete _caret_ (que a su vez requiere del paquete _lattice_). La función _preProcess_ del paquete _caret_ toma como argumento el _dataset_ de **training_data** y crea un objeto llamado **norm_Param** que almacena todos los parámetros (la media y la desviación estándar) correspondientes a ese _dataset_ para después aplicarlo mediante la función _predict_ a **test_data** y **training_data**, y así normalizarlos utilizando los mismos parámetros.  
+
+## Análisis multivariante
+
+Primero calculo la correlación entre variables mediante la función _cor_ de la librería _corrplot_. Utilizo el coeficiente de correlación de _Spearman_ porque la relación entre variables no es lineal.
+
+```{r message=FALSE, warning=FALSE}
+
+library(corrplot)
+cor_matrix <- cor(norm_train[,2:10], method = c("spearman"))
+corrplot(cor_matrix, method = "number", type = "upper", order = "hclust", tl.cex = 0.9)
+
+```
+
+Se puede observar que todas las variables tienen una correlación positiva. Existe gran correlación entre las variables _shape_ y _size_ (0.90). Por lo tanto, a la hora de construir el modelo, se puede obviar la variable _size_, ya que nos van a aportar información redundante. El resto de variables tienen una correlación moderada, salvo _mit_, que tiene una correlación relativamente baja, por lo que se puede intuir que dicha variable no será un predictor importante a la hora de clasificar las clases de la variable _class_.
+
+A continuación, realizo t-tests para obtener una tabla de p-valores y salen todos significativos. Por lo tanto, se puede rechazar la hipótesis nula de que las medias entre las diferentes variables son iguales, es decir, hay diferencias significativas entre las medias de las distintas variables.
+
+```{r}
+
+p_value_ttest <- data.frame(matrix(NA, byrow = T, nrow = 9))
+rownames(p_value_ttest) <- c("thick","size","shape","adhesion","epi_size",
+                             "b_nuclei","b_chr","n_nucleoli","mit")
+colnames(p_value_ttest) <- "p-value"
+
+for(i in 2:length(norm_train)-1){
+  t <- t.test(as.integer(norm_train$class), norm_train[,i])
+  p_valor <- t$p.value
+  p_value_ttest[i-1,1] <- p_valor
+}
+
+```
+
+
+#### Análisis de Componentes Principales (PCA)
+
+Para tener una idea previa de cuáles son las variables más importantes del _dataset_ **norm_train** llevo a cabo un Análisis de Componentes Principales (PCA). En **train.pca** guardo todos los atributos correspondientes al análisis de PCA, y posteriormente grafico la varianza explicada por cada uno de los componentes. 
+
+```{r}
+
+train.pca <- prcomp(norm_train[,2:10], center=TRUE, scale=TRUE)
+plot(train.pca, type="l", main='')
+title(main = "Principal components weight", sub = NULL, xlab = "Components")
+box()
+
+summary(train.pca)
+
+```
+
+Para calcular la proporción de varianza explicada y acumulada, primero obtengo la desviación estándar del objeto **train.pca** y la elevo al cuadrado, obteniendo la varianza. Después, obtengo la proporción de varianza explicada dividiendo cada varianza por el sumatorio de la misma. Luego, obtengo la proporción de varianza explicada acumulada **cum_pve** mediante la función _cumsum_. Finalmente, hago un _tibble_ con ambas.
+
+```{r}
+
+pca_var <- train.pca$sdev^2
+pve_df <- pca_var / sum(pca_var)
+cum_pve <- cumsum(pve_df)
+pve_table <- tibble(comp = seq(1:9), pve_df, cum_pve)
+
+```
+
+Represento gráficamente la proporción de varianza explicada acumulada para cada uno de los componentes principales. Establezco un umbral en 0.95, y observo que 7 de las componentes principales ya explican más del 95% de la varianza explicada. 
+
+Por lo tanto, puedo intuir que de las 9 variables del _data_frame_ **norm_data** puedo prescindir de 2-3 variables, puesto que sus varianzas explicadas correspondientes quedarán explicadas por el resto de varianzas del resto de variables.
+
+```{r}
+
+ggplot(pve_table, aes(x = comp, y = cum_pve)) + 
+  geom_point()+ 
+  geom_line()+
+  geom_abline(intercept = 0.95, color = "red", slope = 0)
+
+```
+
+Finalmente, construyo un biplot con el paquete _ggfortify_. Este me permite ver que las observaciones que pertenecen a la clase _Benign_ tienen _scores_ más altos de PC1 que las observaciones de la clase _Malignant_. Aproximadamente un 66% de la varianza explicada viene dada por PC1 y aproximadamente un 9% por PC2. 
+
+La variable **mit** tiene mayor peso en la componente PC2, mientras que el resto de las variables tienen mayor peso en la componente a PC1.
+
+```{r warning=FALSE}
+
+library(ggfortify)
+
+pca_res <- prcomp(norm_train[2:10], scale=TRUE)
+autoplot(pca_res, data = norm_train, label = FALSE, loadings.label = TRUE, colour = 'class',
+         loadings.label.size = 3, loadings.label.vjust = 0.5, loadings.label.hjust = 1.1,
+         loadings.label.colour = "dark blue", loadings.colour = "black")
+
+```
+
+## Modelo de regresión logística
+
+A la hora de realizar el modelo, primero genero un _generalized línear model_. La variable **class** es la que se quiere predecir, es decir, se quiere clasificar una observación como _Beningn_ o _Malignant_ en función del resto de variables. Por lo tanto, elijo la famila de tipo _binomial_. 
+
+Teniendo varios de los análisis previos en cuenta, elimino las variables **size**, **shape**, **epi_size** y **mit** porque al añadirlas al modelo y hacer un _summary_ no salen significativas. Además, varias de ellas tenían gran correlación entre sí, tal y como se han visto antes, por eso se pueden considerar que son redundantes. El resto de variables sí son significativas.
+
+```{r}
+
+mod <- glm(class ~  adhesion + thick + b_nuclei + b_chr + n_nucleoli, data = norm_train, family = binomial(link = "logit"))
+
+summary(mod)
+
+```
+
+A continuación, mediante el paquete _caret_ cargado anteriormente, empleo la función _trainControl_ para realizar el _cross-validation_ del modelo. Construyo un objeto llamado **ctrl_spec**, que me guarda todos los parámetros control para realizar el _cross-validation_ de **norm_train**. Elijo que haga el _cross-validation_ en 5 iteraciones y que me guarde todas las predicciones de cada iteración.
+
+Después, construyo el modelo con la función _train_, seleccionando las 5 variables predictoras que he escogido anteriormente, y empleo como control del _training_ el objeto **ctrl_spec** con todos los parámetros guardados anteriormente.
+
+Tras crear la matriz de confusión mediante la función _confusionMatrix_ y especificar que la clase **positiva (+)** es _Malignant_ (presencia del tumor), obtengo un _accuracy_ de 0.97, una especificidad de 0.96, una sensibilidad de 0.97, una _precission_ (valor predictivo positivo) de 0.95 y un valor predictivo negativo de 0.98. Por lo tanto, se puede considerar que el modelo planteado predice relativamente bien cada una de las observaciones a la hora de llevar a cabo el _cross-validation_.
+
+```{r}
+
+ctrl_spec <- trainControl(method = "cv", number = 5, 
+                    savePredictions = "all", classProbs = T)
+
+model <- train(class ~ adhesion + thick + b_nuclei + b_chr + n_nucleoli, 
+                data = norm_train, method = "glm", 
+                family = "binomial", trControl = ctrl_spec)
+
+confmat <- confusionMatrix(data = model$pred[,1], reference = model$pred[,2],
+                           positive = "Malignant")
+
+print(model)
+print(confmat)
+
+```
+
+En base a las predicciones realizadas y los datos originales, utilizo el paquete _pROC_ para crear una curva ROC. Obtengo que el área bajo la curva (AUC) es de 0.96 aproximadamente. Eso significa que el modelo utilizado tiene la capacidad de clasificar bastante bien a individuos con tumores de clase _Malignant_ o _Benign_.
+
+```{r}
+
+library(pROC)
+roc_score <- roc(as.numeric(model$pred[,2]), as.numeric(model$pred[,1]))
+plot(roc_score) 
+
+```
+
+
+Finalmente, utilizo la función _predict_ para predecir, en base al modelo ya entrenado, cuál será la clasificación de los datos del _dataset_ **norm_test**. Guardo los resultados en un _data_frame_ junto con sus correspondientes **id** para compararlos con los datos reales y ver cómo de buena ha sido la clasificación.
+
+```{r}
+
+pred <- predict(model, newdata = norm_test)
+predictions <- data.frame(norm_test[,1],pred)
+names(predictions)[1] <- "id"
+
+```
+
+Guardo las predicciones del _dataset_ **norm_test** en un archivo _csv_.
+
+```{r warning=FALSE}
+
+file <- paste0("C:\\Users\\Usuario\\ML\\machine_learning1/andonisaenz_predictions.csv")
+write.csv(predictions, file)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
